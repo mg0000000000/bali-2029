@@ -209,6 +209,20 @@ html,body{
 .dots i{width:6px;height:6px;border-radius:50%;background:var(--mist-dim);opacity:.35;transition:.5s}
 .dots i.on{opacity:1;background:var(--gold);box-shadow:0 0 12px rgba(255,211,122,.9)}
 
+.video-layer{
+  position:fixed;inset:0;z-index:5;background:#000;
+  opacity:0;visibility:hidden;transition:opacity 1s ease;
+}
+.video-layer.on{opacity:1;visibility:visible}
+.video-layer .vid-box{position:absolute;inset:0;overflow:hidden}
+.video-layer iframe{
+  position:absolute;top:50%;left:50%;
+  width:102vw;height:57.4vw;
+  min-height:102vh;min-width:181.3vh;
+  transform:translate(-50%,-50%);
+  pointer-events:none;border:0;
+}
+
 @media (prefers-reduced-motion: reduce){
   .aurora span,.waves svg,.mega,.sweeps b,.stars i,.qr-card{animation:none}
   .mega.zap span{animation:none;opacity:1}
@@ -218,6 +232,8 @@ html,body{
 </style>
 </head>
 <body>
+
+<div class="video-layer" id="videoLayer"><div class="vid-box"><div id="ytPlayer"></div></div></div>
 
 <div class="aurora"><span class="a1"></span><span class="a2"></span><span class="a3"></span></div>
 <div class="sweeps"><b class="s1"></b><b class="s2"></b><b class="s3"></b></div>
@@ -377,23 +393,77 @@ function tick(){
 }
 tick();setInterval(tick,250);
 
-/* --- scene cycler with warm flash --- */
+/* --- phase controller: slides ↔ video --- */
+const VIDEO_ID      = "FwIHSDiFye8";
+const VIDEO_START   = 0;
+const VIDEO_SECONDS = 180;
+const VIDEO_MUTED   = false;
+
 const scenes=[...document.querySelectorAll('.scene')];
 const dotsEl=document.getElementById('dots');
 scenes.forEach((_,i)=>{const dd=document.createElement('i');if(i===0)dd.classList.add('on');dotsEl.appendChild(dd);});
 const dots=[...dotsEl.children];
 const flash=document.getElementById('flash');
+const videoLayer=document.getElementById('videoLayer');
 
-let idx=0;
-setInterval(()=>{
-  flash.classList.add('on');
-  setTimeout(()=>flash.classList.remove('on'),260);
-  scenes[idx].classList.remove('active');
-  dots[idx].classList.remove('on');
-  idx=(idx+1)%scenes.length;
-  scenes[idx].classList.add('active');
-  dots[idx].classList.add('on');
-},SCENE_MS);
+let idx=0, slideTimer=null, videoTimer=null, player=null, ytReady=false;
+
+function showScene(i){
+  scenes[idx].classList.remove('active');dots[idx].classList.remove('on');
+  idx=i;
+  scenes[idx].classList.add('active');dots[idx].classList.add('on');
+  flash.classList.add('on');setTimeout(()=>flash.classList.remove('on'),260);
+}
+
+function startSlides(){
+  videoLayer.classList.remove('on');
+  if(player&&ytReady){try{player.pauseVideo();}catch(e){}}
+  showScene(0);
+  let count=1;
+  slideTimer=setInterval(()=>{
+    if(count>=scenes.length){
+      clearInterval(slideTimer);
+      if(VIDEO_ID&&ytReady){startVideo();}else{
+        showScene(0);count=1;
+        slideTimer=setInterval(()=>{showScene((idx+1)%scenes.length);},SCENE_MS);
+      }
+      return;
+    }
+    showScene(count);count++;
+  },SCENE_MS);
+}
+
+function startVideo(){
+  videoLayer.classList.add('on');
+  try{
+    player.seekTo(VIDEO_START,true);
+    if(VIDEO_MUTED)player.mute();else player.unMute();
+    player.playVideo();
+  }catch(e){}
+  videoTimer=setTimeout(()=>{startSlides();},VIDEO_SECONDS*1000);
+}
+
+if(VIDEO_ID){
+  const tag=document.createElement('script');
+  tag.src="https://www.youtube.com/iframe_api";
+  document.head.appendChild(tag);
+}
+window.onYouTubeIframeAPIReady=function(){
+  player=new YT.Player('ytPlayer',{
+    videoId:VIDEO_ID,
+    playerVars:{controls:0,disablekb:1,rel:0,playsinline:1,modestbranding:1,start:VIDEO_START},
+    events:{
+      onReady:()=>{ytReady=true;},
+      onStateChange:(e)=>{
+        if(e.data===YT.PlayerState.ENDED&&videoLayer.classList.contains('on')){
+          clearTimeout(videoTimer);startSlides();
+        }
+      }
+    }
+  });
+};
+
+startSlides();
 
 /* fullscreen: click or press F */
 addEventListener('click',toggleFS);
